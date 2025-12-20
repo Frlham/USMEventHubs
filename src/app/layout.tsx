@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 
+
 export const metadata: Metadata = {
   title: 'USM Event Hub',
   description: 'Manage your events with ease.',
@@ -27,7 +28,7 @@ export default function RootLayout({
           <Header />
           <main className="flex-grow bg-[url('/images/usmbg.jpg')] bg-cover bg-center bg-fixed relative">
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/30 to-black/50 pointer-events-none" />
-            <div className="relative z-10">
+            <div className="relative z-10 w-full min-h-screen">
               {children}
             </div>
           </main>
