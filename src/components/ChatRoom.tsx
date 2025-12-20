@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -257,7 +258,7 @@ export default function ChatRoom({ eventId, organizerId }: Props) {
                 return (
                   <>
                     {pinned.length > 0 && (
-                      <div className="sticky top-0 bg-transparent z-10 space-y-3 mb-4 pb-3 border-b border-neutral-700">
+                      <div className="sticky top-0 bg-neutral-900/80 backdrop-blur-sm z-10 space-y-3 mb-4 pb-3 pt-2 -mx-2 px-2 border-b border-neutral-700">
                         {pinned.map((m) => (
                           <ChatMessage
                             key={`pinned-${m.id}`}
@@ -358,5 +359,7 @@ export default function ChatRoom({ eventId, organizerId }: Props) {
     </div>
   );
 }
+
+    
 
     
