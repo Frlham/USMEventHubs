@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { GlowEffect } from './GlowEffect';
+import Tilt from 'react-parallax-tilt';
 
 
 interface EventCardProps {
@@ -57,61 +58,72 @@ export default function EventCard({ event }: EventCardProps) {
   }, [user, event.id]);
 
   return (
-    <Link href={`/event/${event.id}`} className="flex">
-      <GlowEffect hover intensity="medium" className="flex-1">
-        <Card className={cn(
-          "flex flex-col overflow-hidden h-[500px] transition-all hover:shadow-xl hover:-translate-y-1 w-full",
-          isRegistered && "border-accent ring-2 ring-accent"
-        )}>
-          <div className="relative aspect-video w-full">
-            <Image src={event.imageUrl} alt={event.title} fill style={{ objectFit: 'cover' }} />
-            <div className="absolute top-2 right-2 flex gap-2">
-              {isRegistered && (
-                <Badge variant="secondary" className="text-sm bg-accent/90 text-accent-foreground">
-                  <UserCheck className="h-3 w-3 mr-1.5" />
-                  Registered
-                </Badge>
-              )}
-              {event.isFree ? (
-                <Badge variant="secondary" className="text-sm">Free</Badge>
-              ) : event.price ? (
-                <Badge variant="secondary" className="text-sm">RM{event.price.toFixed(2)}</Badge>
-              ) : (
-                <Badge variant="secondary" className="text-sm">Paid</Badge>
-              )}
-              <Badge variant="outline" className="text-sm bg-background/80 backdrop-blur-sm capitalize">
-                {event.eventType === 'online' ? (
-                  <Laptop className="h-3 w-3 mr-1.5" />
-                ) : (
-                  <Users className="h-3 w-3 mr-1.5" />
-                )}
-                {event.eventType}
-              </Badge>
-            </div>
-          </div>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">{event.title}</CardTitle>
-            <CardDescription className="flex items-center pt-1 text-sm">
-              <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span>{event.date ? format(toMalaysiaTime(event.date.toDate()), 'EEEE, MMMM d, yyyy') : 'Date not set'}</span>
-            </CardDescription>
-            <CardDescription className="flex items-center pt-1 text-sm">
-              <Clock className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
-            </CardDescription>
-            <CardDescription className="flex items-center pt-1 text-sm">
-              <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span>{event.location}</span>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-grow flex flex-col">
-            <p className="text-sm text-muted-foreground line-clamp-3 flex-grow">{event.description}</p>
-          </CardContent>
-          <CardFooter>
-            <span className="text-sm font-semibold text-primary">Read More</span>
-          </CardFooter>
-        </Card>
-      </GlowEffect>
-    </Link>
+    <div className="relative h-full">
+      <Link href={`/event/${event.id}`} className="flex h-full block">
+        <GlowEffect hover intensity="medium" className="flex-1 h-full">
+          <Tilt
+            tiltMaxAngleX={10}
+            tiltMaxAngleY={10}
+            perspective={1000}
+            scale={1.05}
+            transitionSpeed={1000}
+            className="h-full w-full"
+          >
+            <Card className={cn(
+              "flex flex-col overflow-hidden h-[500px] transition-all hover:shadow-xl w-full relative",
+              isRegistered && "border-accent ring-2 ring-accent"
+            )}>
+              <div className="relative aspect-video w-full">
+                <Image src={event.imageUrl} alt={event.title} fill style={{ objectFit: 'cover' }} />
+                <div className="absolute top-2 right-2 flex gap-2">
+                  {isRegistered && (
+                    <Badge variant="secondary" className="text-sm bg-accent/90 text-accent-foreground">
+                      <UserCheck className="h-3 w-3 mr-1.5" />
+                      Registered
+                    </Badge>
+                  )}
+                  {event.isFree ? (
+                    <Badge variant="secondary" className="text-sm backdrop-blur-md bg-white/80">Free</Badge>
+                  ) : event.price ? (
+                    <Badge variant="secondary" className="text-sm backdrop-blur-md bg-white/80">RM{event.price.toFixed(2)}</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-sm backdrop-blur-md bg-white/80">Paid</Badge>
+                  )}
+                  <Badge variant="outline" className="text-sm bg-background/80 backdrop-blur-sm capitalize border-none">
+                    {event.eventType === 'online' ? (
+                      <Laptop className="h-3 w-3 mr-1.5" />
+                    ) : (
+                      <Users className="h-3 w-3 mr-1.5" />
+                    )}
+                    {event.eventType}
+                  </Badge>
+                </div>
+              </div>
+              <CardHeader>
+                <CardTitle className="font-headline text-xl line-clamp-1">{event.title}</CardTitle>
+                <CardDescription className="flex items-center pt-1 text-sm">
+                  <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span>{event.date ? format(toMalaysiaTime(event.date.toDate()), 'EEEE, MMMM d, yyyy') : 'Date not set'}</span>
+                </CardDescription>
+                <CardDescription className="flex items-center pt-1 text-sm">
+                  <Clock className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
+                </CardDescription>
+                <CardDescription className="flex items-center pt-1 text-sm">
+                  <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span className="truncate">{event.location}</span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow flex flex-col">
+                <p className="text-sm text-muted-foreground line-clamp-3 flex-grow">{event.description}</p>
+              </CardContent>
+              <CardFooter className="mt-auto">
+                <span className="text-sm font-semibold text-primary">Read More</span>
+              </CardFooter>
+            </Card>
+          </Tilt>
+        </GlowEffect>
+      </Link>
+    </div>
   );
 }

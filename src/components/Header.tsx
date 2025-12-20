@@ -40,9 +40,9 @@ export function Header() {
   return (
     <header className="bg-card text-card-foreground border-b sticky top-0 z-50">
       <div className="container mx-auto px-4 flex justify-between items-center h-24">
-        <Link href="/" className="flex items-center gap-4">
-          <Image src="/images/usm.png" alt="USM Event Hub Logo" width={220} height={80} className="object-contain h-16 w-auto" />
-          <span className="font-headline font-bold text-3xl tracking-tight">USM Event Hub</span>
+        <Link href="/" className="flex items-center gap-2 md:gap-4">
+          <Image src="/images/usm.png" alt="USM Event Hub Logo" width={220} height={80} className="object-contain h-12 w-auto md:h-16" />
+          <span className="font-headline font-bold text-lg md:text-3xl tracking-tight">USM Event Hub</span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-4">
           {!loading && (
