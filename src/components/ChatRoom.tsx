@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -17,6 +18,8 @@ interface Props {
   eventId: string;
   organizerId?: string | null;
 }
+
+const PIN_LIMIT = 3;
 
 export default function ChatRoom({ eventId, organizerId }: Props) {
   const { user, userProfile } = useAuth();
@@ -188,6 +191,20 @@ export default function ChatRoom({ eventId, organizerId }: Props) {
       return;
     }
 
+    // Check pin limit only when trying to pin a new message
+    if (!currentPinned) {
+      const pinnedCount = messages.filter(m => m.pinned).length;
+      if (pinnedCount >= PIN_LIMIT) {
+        toast({
+          title: 'Pin Limit Reached',
+          description: `You can only pin up to ${PIN_LIMIT} messages.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+
     try {
       const messageRef = doc(db, 'events', eventId, 'messages', messageId);
       await updateDoc(messageRef, { pinned: !currentPinned })
@@ -241,7 +258,7 @@ export default function ChatRoom({ eventId, organizerId }: Props) {
                 return (
                   <>
                     {pinned.length > 0 && (
-                      <div className="sticky top-0 bg-neutral-900 z-10 space-y-3 mb-4 pb-3 border-b border-neutral-700">
+                      <div className="sticky top-0 backdrop-blur-sm z-10 space-y-3 mb-4 pb-3 pt-2 -mx-2 px-2 border-b border-neutral-700">
                         {pinned.map((m) => (
                           <ChatMessage
                             key={`pinned-${m.id}`}
@@ -342,3 +359,7 @@ export default function ChatRoom({ eventId, organizerId }: Props) {
     </div>
   );
 }
+
+    
+
+    

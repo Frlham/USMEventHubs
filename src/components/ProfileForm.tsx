@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -29,11 +27,15 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { Camera, Loader2 } from 'lucide-react';
 import { Skeleton } from './ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+const campuses = ["Main Campus", "Engineering Campus", "Health Campus", "AMDI / IPPT"];
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }).max(50, { message: 'Name cannot be longer than 50 characters.' }),
   email: z.string().email().optional(),
   photoURL: z.string().nullable().optional(),
+  campus: z.string().optional(),
 });
 
 type ProfileFormValues = z.infer<typeof formSchema>;
@@ -89,7 +91,7 @@ export default function ProfileForm() {
 
     const form = useForm<ProfileFormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: { name: '', email: '', photoURL: null },
+        defaultValues: { name: '', email: '', photoURL: null, campus: '' },
     });
 
     useEffect(() => {
@@ -98,6 +100,7 @@ export default function ProfileForm() {
                 name: userProfile.name || '',
                 email: userProfile.email || '',
                 photoURL: userProfile.photoURL || null,
+                campus: userProfile.campus || '',
             });
         }
     }, [userProfile, form]);
@@ -144,7 +147,9 @@ export default function ProfileForm() {
         const userDocRef = doc(db, 'users', user.uid);
         
         try {
-            const updateData: { name: string, photoURL?: string | null } = { name: data.name };
+            const updateData: { name: string, photoURL?: string | null } = { 
+                name: data.name,
+            };
             
             // Only include photoURL in the update if it has actually changed.
             if (data.photoURL !== userProfile.photoURL) {
@@ -224,6 +229,20 @@ export default function ProfileForm() {
                             )}
                         />
                         <FormField
+                          control={form.control}
+                          name="campus"
+                          render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="text-white">Campus</FormLabel>
+                                <FormControl>
+                                    <Input disabled {...field} value={field.value || ''} />
+                                </FormControl>
+                                <FormDescription>Your campus cannot be changed.</FormDescription>
+                                <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
                             control={form.control}
                             name="email"
                             render={({ field }) => (
@@ -248,7 +267,3 @@ export default function ProfileForm() {
         </Card>
     );
 }
-
-    
-
-    

@@ -17,6 +17,7 @@ export interface Event {
   endTime: string;
   description: string;
   imageUrl: string;
+  videoUrl?: string;
   location: string;
   isFree: boolean;
   price?: number;
@@ -25,6 +26,9 @@ export interface Event {
   organizerId?: string; // UID of the admin who created the event
   groupLink?: string;
   qrCodeUrl?: string;
+  conductingCampus: string;
+  eligibleCampuses?: string[];
+  viewCount?: number;
 }
 
 export interface UserProfile {
@@ -33,4 +37,5 @@ export interface UserProfile {
   role: 'admin' | 'student';
   name?: string;
   photoURL?: string | null;
+  campus?: string;
 }

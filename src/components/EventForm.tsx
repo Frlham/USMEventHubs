@@ -13,17 +13,18 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { CalendarIcon, Trash2, Upload, Loader2 } from 'lucide-react';
+import { CalendarIcon, Trash2, Upload, Loader2, Check, ChevronsUpDown, Video, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
-import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadString } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
 import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
@@ -32,6 +33,10 @@ import type { Event } from '@/types';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { v4 as uuidv4 } from 'uuid';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command';
+import { Badge } from './ui/badge';
+
+const campuses = ["Main Campus", "Engineering Campus", "Health Campus", "AMDI / IPPT"] as const;
 
 const formSchema = z.object({
   title: z.string().min(3, { message: 'Title must be at least 3 characters.' }),
@@ -40,12 +45,15 @@ const formSchema = z.object({
   endTime: z.string({ required_error: 'An end time is required.' }).min(1, { message: 'End time is required.' }),
   description: z.string().min(10, { message: 'Description must be at least 10 characters.' }),
   imageUrl: z.string({ required_error: 'Please select an event image.' }).min(1, { message: 'Image is required.' }),
+  videoUrl: z.string().optional(),
   location: z.string().min(3, { message: 'Location must be at least 3 characters.' }),
   price: z.coerce.number().min(0).optional(),
   isFree: z.enum(['free', 'paid']).default('free'),
   eventType: z.enum(['online', 'physical'], { required_error: 'Please select an event type.' }),
   groupLink: z.string().url({ message: 'Please enter a valid URL.' }).optional().or(z.literal('')),
   qrCodeUrl: z.string().optional(),
+  eligibleCampuses: z.array(z.string()).min(1, { message: 'Please select at least one eligible campus.' }),
+  conductingCampus: z.string(),
 }).refine(data => {
     if (data.isFree === 'paid') {
         return data.price !== undefined && data.price >= 1;
@@ -154,11 +162,12 @@ async function resizeImage(file: File, maxSize: number): Promise<string> {
 export default function EventForm({ event, isEditable = true }: EventFormProps) {
   const { toast } = useToast();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const imageInputRef = useRef<HTMLInputElement>(null);
   const qrInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   
   const isEditMode = !!event;
 
@@ -170,7 +179,10 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
       date: event.date?.toDate(),
       groupLink: event.groupLink || '',
       qrCodeUrl: event.qrCodeUrl || '',
+      videoUrl: event.videoUrl || '',
       price: event.price ?? 1,
+      eligibleCampuses: event.eligibleCampuses || [],
+      conductingCampus: event.conductingCampus,
     } : {
       title: '',
       description: '',
@@ -178,14 +190,24 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
       startTime: '',
       endTime: '',
       imageUrl: '',
+      videoUrl: '',
       location: '',
       isFree: 'free',
       price: 1,
       eventType: undefined,
       groupLink: '',
       qrCodeUrl: '',
+      eligibleCampuses: [],
+      conductingCampus: userProfile?.campus || '',
     },
   });
+  
+  // Set conducting campus when user profile loads for a new form
+  useEffect(() => {
+    if (!isEditMode && userProfile?.campus) {
+      form.setValue('conductingCampus', userProfile.campus, { shouldValidate: true });
+    }
+  }, [userProfile, isEditMode, form]);
 
   const handleImageUpload = async (file: File, type: 'event' | 'qr'): Promise<string> => {
     if (!user) throw new Error("User not authenticated for upload.");
@@ -202,19 +224,47 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
     const storageRef = ref(storage, path);
     const resizedDataUrl = await resizeImage(file, type === 'event' ? 800 : 400);
     
-    await uploadString(storageRef, resizedDataUrl, 'data_url');
-    return getDownloadURL(storageRef);
+    // Using uploadString for data URLs
+    const uploadTask = await uploadString(storageRef, resizedDataUrl, 'data_url');
+    return getDownloadURL(uploadTask.ref);
+  };
+  
+  const handleVideoUpload = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        if (!user) return reject("User not authenticated for upload.");
+        
+        const eventIdForPath = isEditMode ? event.id : form.getValues('title').replace(/\s+/g, '-').toLowerCase() + '-' + uuidv4();
+        const path = `event-videos/${eventIdForPath}/event-video.mp4`;
+        const storageRef = ref(storage, path);
+
+        const uploadTask = uploadBytesResumable(storageRef, file);
+
+        uploadTask.on('state_changed', 
+            (snapshot) => {
+                // Optional: handle progress
+            }, 
+            (error) => {
+                console.error("Video upload failed:", error);
+                reject(error);
+            }, 
+            () => {
+                getDownloadURL(uploadTask.snapshot.ref).then(downloadURL => {
+                    resolve(downloadURL);
+                });
+            }
+        );
+    });
   };
 
   async function onSubmit(data: EventFormValues) {
-    if (!user) {
+    if (!user || !userProfile) {
       toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in.' });
       return;
     }
     setIsSubmitting(true);
 
     try {
-        const eventData = {
+        const eventData: any = {
             ...data,
             isFree: data.isFree === 'free',
             price: data.isFree === 'paid' ? data.price : 0,
@@ -226,7 +276,17 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
             toast({ title: 'Event Updated!', description: `"${data.title}" has been updated.` });
             router.push('/admin');
         } else {
-            await addDoc(collection(db, 'events'), { ...eventData, createdAt: serverTimestamp(), organizerId: user.uid });
+             // Ensure conductingCampus is set from profile for new events
+            if (!userProfile.campus) {
+              throw new Error("Admin's campus is not set. Cannot create event.");
+            }
+            await addDoc(collection(db, 'events'), { 
+              ...eventData, 
+              viewCount: 0, // Initialize view count
+              conductingCampus: userProfile.campus,
+              createdAt: serverTimestamp(), 
+              organizerId: user.uid,
+            });
             toast({ title: 'Event Created!', description: `"${data.title}" has been added.` });
             handleReset();
         }
@@ -238,19 +298,31 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
     }
   }
 
-  const [uploadProgress, setUploadProgress] = useState<{ type: 'event' | 'qr' | null, loading: boolean }>({ type: null, loading: false });
+  const [uploadProgress, setUploadProgress] = useState<{ type: 'event' | 'qr' | 'video' | null, loading: boolean }>({ type: null, loading: false });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'event' | 'qr') => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'event' | 'qr' | 'video') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadProgress({ type, loading: true });
 
-    handleImageUpload(file, type)
+    let uploadPromise: Promise<string>;
+
+    if (type === 'video') {
+        uploadPromise = handleVideoUpload(file);
+    } else {
+        uploadPromise = handleImageUpload(file, type);
+    }
+
+    uploadPromise
       .then(downloadURL => {
-        const fieldToUpdate = type === 'event' ? 'imageUrl' : 'qrCodeUrl';
+        let fieldToUpdate: 'imageUrl' | 'qrCodeUrl' | 'videoUrl';
+        if (type === 'event') fieldToUpdate = 'imageUrl';
+        else if (type === 'qr') fieldToUpdate = 'qrCodeUrl';
+        else fieldToUpdate = 'videoUrl';
+        
         form.setValue(fieldToUpdate, downloadURL, { shouldValidate: true, shouldDirty: true });
-        toast({ title: `${type === 'event' ? 'Image' : 'QR Code'} uploaded!` });
+        toast({ title: `${type.charAt(0).toUpperCase() + type.slice(1)} uploaded!` });
       })
       .catch(error => {
         console.error("Upload failed:", error);
@@ -269,12 +341,15 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
         startTime: '',
         endTime: '',
         imageUrl: '',
+        videoUrl: '',
         location: '',
         isFree: 'free',
         price: 1,
         eventType: undefined,
         groupLink: '',
         qrCodeUrl: '',
+        eligibleCampuses: [],
+        conductingCampus: userProfile?.campus || '',
     });
   }
 
@@ -282,6 +357,7 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
   const selectedDate = form.watch('date');
   const previewImage = form.watch('imageUrl');
   const previewQr = form.watch('qrCodeUrl');
+  const previewVideo = form.watch('videoUrl');
   const getCurrentTime = () => format(getMalaysiaTimeNow(), 'HH:mm');
   const isUploading = uploadProgress.loading;
 
@@ -302,6 +378,25 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
                     </FormControl>
                     <FormMessage />
                   </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="conductingCampus"
+                render={({ field }) => (
+                   <FormItem>
+                      <FormLabel className="text-white">Conducting Campus</FormLabel>
+                      <FormControl>
+                          <div className="relative">
+                            <Input value={field.value} disabled />
+                            <Building2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          </div>
+                      </FormControl>
+                      <FormDescription>
+                          This is automatically set to your profile's campus and cannot be changed.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
                 )}
               />
                <FormField
@@ -482,6 +577,19 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
                 </FormControl>
                 <FormMessage>{form.formState.errors.imageUrl?.message}</FormMessage>
               </FormItem>
+              <FormItem>
+                <FormLabel className="text-white">Event Video (Optional)</FormLabel>
+                <FormControl>
+                    <div onClick={() => videoInputRef.current?.click()} className={cn("aspect-video w-full relative rounded-md overflow-hidden border bg-muted flex items-center justify-center text-muted-foreground text-center", isEditable && "cursor-pointer group-disabled:cursor-not-allowed group-disabled:opacity-50")}>
+                        <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} className="hidden" accept="video/mp4" disabled={!isEditable || (isUploading && uploadProgress.type === 'video')}/>
+                        {previewVideo ? (<video src={previewVideo} className="w-full h-full object-cover" controls />) : (<div className='text-center'><Video className="h-8 w-8 mx-auto" /><p>Click to upload video</p></div>)}
+                        {isEditable && (<div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            {(isUploading && uploadProgress.type === 'video') ? (<Loader2 className="h-8 w-8 text-white animate-spin" />) : (<div className='text-center text-white'><Upload className="h-8 w-8 mx-auto" /><p>Upload Video</p></div>)}
+                        </div>)}
+                    </div>
+                </FormControl>
+                <FormMessage>{form.formState.errors.videoUrl?.message}</FormMessage>
+              </FormItem>
                <FormField
                 control={form.control}
                 name="description"
@@ -491,6 +599,76 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
                     <FormControl className="flex-grow">
                       <Textarea placeholder="Describe the event, what it's about, and who should attend." className="resize-none min-h-[150px] flex-grow" {...field}/>
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="eligibleCampuses"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel className="text-white">Eligible Campuses</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className={cn(
+                              "w-full justify-between",
+                              !field.value?.length && "text-muted-foreground"
+                            )}
+                          >
+                            <div className="truncate flex items-center gap-1">
+                                {field.value?.length ? `${field.value.length} selected` : "Select eligible campuses"}
+                            </div>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                        <Command>
+                          <CommandInput placeholder="Search campus..." />
+                          <CommandEmpty>No campus found.</CommandEmpty>
+                          <CommandGroup>
+                            {campuses.map((campus) => (
+                              <CommandItem
+                                key={campus}
+                                onSelect={() => {
+                                  const selected = field.value || [];
+                                  const isSelected = selected.includes(campus);
+                                  const newSelection = isSelected
+                                    ? selected.filter((item) => item !== campus)
+                                    : [...selected, campus];
+                                  field.onChange(newSelection);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    (field.value || []).includes(campus)
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {campus}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <FormDescription>
+                       Select which campuses are eligible to join this event.
+                       {field.value?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {field.value.map(campus => (
+                            <Badge key={campus} variant="secondary">{campus}</Badge>
+                          ))}
+                        </div>
+                       )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -509,4 +687,3 @@ export default function EventForm({ event, isEditable = true }: EventFormProps) 
     </Form>
   );
 }
-

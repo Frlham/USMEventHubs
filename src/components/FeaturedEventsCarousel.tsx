@@ -1,261 +1,230 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
+import { ChevronLeft, ChevronRight, Eye, Laptop, Users } from 'lucide-react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, ArrowRight } from 'lucide-react';
-import { format, differenceInDays, differenceInHours } from 'date-fns';
-import { cn } from '@/lib/utils';
 import type { Event } from '@/types';
 import { Button } from './ui/button';
+import { motion, AnimatePresence } from 'framer-motion';
+import { format } from 'date-fns';
+import { Calendar, Clock } from 'lucide-react';
+import { Badge } from './ui/badge';
 
 interface FeaturedEventsCarouselProps {
-    events: Event[];
+  events: Event[];
 }
 
 const toMalaysiaTime = (date: Date) => {
-    return new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+  return new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
 };
 
 const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    const [hours, minutes] = timeString.split(':');
-    const malaysianDate = toMalaysiaTime(new Date());
-    malaysianDate.setHours(parseInt(hours, 10));
-    malaysianDate.setMinutes(parseInt(minutes, 10));
-    return format(malaysianDate, 'p');
+  if (!timeString) return '';
+  const [hours, minutes] = timeString.split(':');
+  
+  const date = new Date();
+  date.setHours(parseInt(hours,10));
+  date.setMinutes(parseInt(minutes,10));
+  date.setSeconds(0);
+
+  return format(date, 'p');
 };
 
+
 export function FeaturedEventsCarousel({ events }: FeaturedEventsCarouselProps) {
-    const [activeSlide, setActiveSlide] = useState(0);
-    const featuredEvents = events.slice(0, 5); // Limit to top 5
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            handleNext();
-        }, 6000); // Increased duration slightly for better readability
-        return () => clearInterval(interval);
-    }, [activeSlide]);
+  useEffect(() => {
+    if (events.length <= 1) return;
 
-    if (featuredEvents.length === 0) return null;
+    const interval = setInterval(() => {
+      handleNext();
+    }, 5000);
 
-    const handleNext = () => {
-        setActiveSlide((prev) => (prev + 1) % featuredEvents.length);
-    };
+    return () => clearInterval(interval);
+  }, [events.length, currentIndex]);
 
-    const handlePrev = () => {
-        setActiveSlide((prev) => (prev - 1 + featuredEvents.length) % featuredEvents.length);
-    };
+  if (!events || events.length === 0) return null;
 
-    const activeEvent = featuredEvents[activeSlide];
+  const handleNext = () => {
+    setDirection(1);
+    setCurrentIndex((prev) => (prev + 1) % events.length);
+  };
+
+  const handlePrev = () => {
+    setDirection(-1);
+    setCurrentIndex((prev) => (prev - 1 + events.length) % events.length);
+  };
+
+  const getSlideIndex = (offset: number) => {
+    return (currentIndex + offset + events.length) % events.length;
+  };
+
+  const slideVariants = {
+    enter: (direction: number) => ({
+      x: direction > 0 ? '100%' : '-100%',
+      opacity: 0,
+      scale: 0.8,
+    }),
+    center: {
+      zIndex: 1,
+      x: 0,
+      opacity: 1,
+      scale: 1,
+    },
+    exit: (direction: number) => ({
+      zIndex: 0,
+      x: direction < 0 ? '100%' : '-100%',
+      opacity: 0,
+      scale: 0.8,
+    }),
+  };
+
+  const renderSlide = (index: number) => {
+    const event = events[index];
+    if (!event) return null;
 
     return (
-        <div className="relative w-full min-h-[800px] md:min-h-[600px] h-auto overflow-hidden rounded-[2rem] font-sans group flex flex-col md:flex-row bg-transparent">
+       <motion.div
+        key={index}
+        custom={direction}
+        variants={slideVariants}
+        initial="enter"
+        animate="center"
+        exit="exit"
+        transition={{
+          x: { type: 'spring', stiffness: 300, damping: 30 },
+          opacity: { duration: 0.2 },
+          scale: { duration: 0.3 }
+        }}
+        className="absolute w-full h-full flex flex-col items-center justify-center"
+      >
+        <div 
+          className="relative rounded-2xl overflow-hidden shadow-2xl"
+          style={{ width: 432.67, height: 243.38 }}
+        >
+          <img
+            src={event.imageUrl}
+            alt={event.title}
+            className="w-full h-full object-cover rounded-2xl"
+          />
+        </div>
+        <div className="flex flex-col items-center gap-3 text-white text-center w-full max-w-[432.67px] px-4">
+            <h3 className="text-xl font-bold line-clamp-2 mt-4" style={{textShadow: '0 1px 3px rgba(0,0,0,0.5)'}}>
+            {event.title}
+            </h3>
 
-            {/* 
-                CONTENT GRID
-            */}
-            <div className="relative z-10 w-full h-full flex flex-col md:flex-row items-center gap-8 md:gap-12 p-6 md:p-12">
-
-                {/* --- LEFT COLUMN: INFO (Order 2 on mobile to show image first? No, Title first is usually better for context) --- */}
-                {/* Actually, let's keep text top on mobile as originally intended, but ensure no overlap */}
-                <div className="w-full md:w-1/2 flex flex-col justify-center space-y-6 md:space-y-8 z-20 pt-4 md:pt-0 shrink-0">
-                    <AnimatePresence mode="wait">
-                        <motion.div
-                            key={activeEvent.id + "-info"}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            transition={{ duration: 0.5, ease: "easeOut" }}
-                            className="space-y-4 md:space-y-6"
-                        >
-                            <div className="flex flex-wrap gap-3 mb-2">
-                                {/* Status Badge */}
-                                <div className={cn(
-                                    "inline-flex items-center gap-2 px-3 py-1 rounded-full border w-fit",
-                                    activeSlide === 0
-                                        ? "bg-red-500/10 border-red-500/20 text-red-200"
-                                        : "bg-purple-500/10 border-purple-500/20 text-purple-200"
-                                )}>
-                                    <span className="relative flex h-2 w-2">
-                                        <span className={cn(
-                                            "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                                            activeSlide === 0 ? "bg-red-400" : "bg-purple-400"
-                                        )}></span>
-                                        <span className={cn(
-                                            "relative inline-flex rounded-full h-2 w-2",
-                                            activeSlide === 0 ? "bg-red-500" : "bg-purple-500"
-                                        )}></span>
-                                    </span>
-                                    <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">
-                                        {activeSlide === 0 ? 'Nearest Event' : 'Upcoming Event'}
-                                    </span>
-                                </div>
-
-                                {/* Countdown/Timing Badge */}
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
-                                    <Clock className="w-3 h-3" />
-                                    <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider">
-                                        {(() => {
-                                            if (!activeEvent.date) return 'Date TBA';
-                                            const eventDate = toMalaysiaTime(activeEvent.date.toDate());
-                                            const now = toMalaysiaTime(new Date());
-
-                                            const daysDiff = differenceInDays(eventDate, now);
-                                            const hoursDiff = differenceInHours(eventDate, now);
-
-                                            if (hoursDiff <= 0) return 'Happening Now';
-                                            if (daysDiff === 0) {
-                                                return `In ${hoursDiff} Hours`;
-                                            }
-                                            if (daysDiff === 1) return 'Tomorrow';
-                                            return `In ${daysDiff} Days`;
-                                        })()}
-                                    </span>
-                                </div>
-
-
-                            </div>
-
-                            {/* Title */}
-                            <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] tracking-tight">
-                                {activeEvent.title}
-                            </h1>
-
-                            {/* Metadata Grid */}
-                            <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs md:text-sm border-l-2 border-purple-500 pl-4">
-                                <div className="space-y-0.5">
-                                    <div className="flex items-center gap-2 text-purple-400 font-bold">
-                                        <Calendar className="w-3 h-3 md:w-4 md:h-4" /> Date
-                                    </div>
-                                    <p className="text-gray-100 font-medium">
-                                        {activeEvent.date ? format(toMalaysiaTime(activeEvent.date.toDate()), 'MMM d, yyyy') : 'TBA'}
-                                    </p>
-                                </div>
-
-                                <div className="space-y-0.5">
-                                    <div className="flex items-center gap-2 text-purple-400 font-bold">
-                                        <Clock className="w-3 h-3 md:w-4 md:h-4" /> Time
-                                    </div>
-                                    <p className="text-gray-100 font-medium">
-                                        {formatTime(activeEvent.startTime)}
-                                    </p>
-                                </div>
-
-                                <div className="space-y-0.5 col-span-2">
-                                    <div className="flex items-center gap-2 text-purple-400 font-bold">
-                                        <MapPin className="w-3 h-3 md:w-4 md:h-4" /> Location
-                                    </div>
-                                    <p className="text-gray-100 font-medium truncate">
-                                        {activeEvent.location}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Description */}
-                            <p className="text-sm md:text-base text-gray-400 leading-relaxed line-clamp-3 md:line-clamp-4 max-w-lg">
-                                {activeEvent.description}
-                            </p>
-
-                            {/* Actions */}
-                            <div className="flex flex-wrap items-center gap-4 pt-2">
-                                <Link href={`/event/${activeEvent.id}`} className="flex-1 sm:flex-none">
-                                    <Button className="w-full h-12 px-6 rounded-full bg-white text-black hover:bg-gray-100 font-bold text-sm md:text-base">
-                                        Register Now <ArrowRight className="w-4 h-4 ml-2" />
-                                    </Button>
-                                </Link>
-
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handlePrev}
-                                        className="h-12 w-12 rounded-full border border-white/20 flex items-center justify-center text-white bg-black/20 hover:bg-white/10 backdrop-blur-md"
-                                        aria-label="Previous Slide"
-                                    >
-                                        <ChevronLeft className="w-5 h-5" />
-                                    </button>
-                                    <button
-                                        onClick={handleNext}
-                                        className="h-12 w-12 rounded-full border border-white/20 flex items-center justify-center text-white bg-black/20 hover:bg-white/10 backdrop-blur-md"
-                                        aria-label="Next Slide"
-                                    >
-                                        <ChevronRight className="w-5 h-5" />
-                                    </button>
-                                </div>
-                            </div>
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-
-                {/* --- RIGHT COLUMN: VISUALS (Cards) --- */}
-                {/* Explicit height on mobile to ensure cards are visible */}
-                <div className="w-full md:w-1/2 h-[350px] md:h-full relative flex items-center justify-center perspective-[2000px] mt-4 md:mt-0">
-                    <AnimatePresence initial={false}>
-                        {featuredEvents.map((event, index) => {
-                            // Calculate cyclically
-                            let offset = index - activeSlide;
-                            if (offset < 0) offset += featuredEvents.length;
-
-                            // Only render relevant cards
-                            if (offset > 2) return null;
-
-                            return (
-                                <motion.div
-                                    key={event.id}
-                                    className={cn(
-                                        "absolute top-1/2 left-1/2 rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-zinc-900 origin-bottom",
-                                        // Mobile: Smaller cards | Desktop: Larger
-                                        "w-[260px] h-[340px] md:w-[380px] md:h-[480px]"
-                                    )}
-                                    // Adjust initial/animate states to center properly
-                                    initial={{
-                                        scale: 0.9,
-                                        x: "-50%",
-                                        y: "-50%",
-                                        opacity: 0,
-                                        rotateX: 10
-                                    }}
-                                    animate={{
-                                        scale: offset === 0 ? 1 : 1 - (offset * 0.1),
-                                        x: `calc(-50% + ${offset * 30}px)`, // Tighter stacking
-                                        y: `calc(-50% - ${offset * 10}px)`,
-                                        rotateZ: offset * 3,
-                                        rotateX: 0,
-                                        opacity: offset === 0 ? 1 : 0.6 - (offset * 0.1),
-                                        zIndex: 50 - offset,
-                                        filter: offset === 0 ? 'brightness(1)' : 'brightness(0.5) blur(1px)'
-                                    }}
-                                    exit={{
-                                        scale: 1.1,
-                                        x: "-150%",
-                                        opacity: 0,
-                                        transition: { duration: 0.5 }
-                                    }}
-                                    transition={{ duration: 0.6, type: "spring", bounce: 0.2 }}
-                                >
-                                    <Image
-                                        src={event.imageUrl}
-                                        alt={event.title}
-                                        fill
-                                        className="object-cover"
-                                        priority={offset === 0}
-                                    />
-
-                                    {offset === 0 && (
-                                        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-                                            <span className="bg-white/95 text-black px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-                                                {event.isFree ? 'FREE' : `RM ${event.price}`}
-                                            </span>
-                                        </div>
-                                    )}
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
-                </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Badge
+                variant="outline"
+                className="text-sm bg-background/80 backdrop-blur-sm"
+              >
+                <Eye className="h-3 w-3 mr-1.5" />
+                {event.viewCount || 0}
+              </Badge>
+              {event.isFree ? (
+                <Badge variant="secondary" className="text-sm">
+                  Free
+                </Badge>
+              ) : event.price ? (
+                <Badge variant="secondary" className="text-sm">
+                  RM{event.price.toFixed(2)}
+                </Badge>
+              ) : null}
+              <Badge
+                variant="outline"
+                className="text-sm bg-background/80 backdrop-blur-sm capitalize"
+              >
+                {event.eventType === 'online' ? (
+                  <Laptop className="h-3 w-3 mr-1.5" />
+                ) : (
+                  <Users className="h-3 w-3 mr-1.5" />
+                )}
+                {event.eventType}
+              </Badge>
             </div>
 
-
+            <div className="text-sm text-white/90 space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>{event.date ? format(toMalaysiaTime(event.date.toDate()), 'MMM d, yyyy') : 'No date'}</span>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <Clock className="h-4 w-4" />
+                <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
+              </div>
+            </div>
+            <Link href={`/event/${event.id}`} className="w-full mt-2">
+            <Button className="w-full max-w-xs bg-white/15 hover:bg-white/25 border border-white/30 text-white font-semibold transition-all hover:scale-[1.02]">
+                View Event Details
+            </Button>
+            </Link>
         </div>
+      </motion.div>
     );
+  }
+
+  const renderSideSlide = (offset: number) => {
+    if (events.length <= 1) return null;
+    const index = getSlideIndex(offset);
+    const event = events[index];
+    if (!event) return null;
+
+    const isLeft = offset === -1;
+
+    return (
+      <motion.div
+        key={index + (isLeft ? 'left' : 'right')}
+        className="absolute rounded-2xl overflow-hidden"
+        style={{
+          width: 300,
+          height: 168.75,
+          filter: 'blur(3px)',
+          opacity: 0.4
+        }}
+        initial={{ x: isLeft ? '-50%' : '50%', scale: 0.8 }}
+        animate={{ x: isLeft ? '-110%' : '110%', scale: 0.8 }}
+        exit={{ x: isLeft ? '-50%' : '50%', scale: 0.8 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      >
+        <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
+      </motion.div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-[450px] md:h-[500px] rounded-3xl overflow-hidden mb-10 p-4 md:p-6 flex items-center justify-center">
+      {/* Main slides container */}
+      <div className="relative w-full max-w-lg h-full flex items-center justify-center">
+        {/* Side slides for visual effect */}
+        {renderSideSlide(-1)}
+        {renderSideSlide(1)}
+
+        {/* Center slide */}
+        <AnimatePresence initial={false} custom={direction}>
+          {renderSlide(currentIndex)}
+        </AnimatePresence>
+      </div>
+
+      {/* Navigation */}
+      {events.length > 1 && (
+        <>
+          <button
+            onClick={handlePrev}
+            className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-sm border border-white/20 z-20"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleNext}
+            className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-sm border border-white/20 z-20"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </>
+      )}
+    </div>
+  );
 }

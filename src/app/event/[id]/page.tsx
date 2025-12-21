@@ -1,11 +1,13 @@
+
+
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { doc, getDoc, onSnapshot, collection, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { doc, getDoc, onSnapshot, collection, setDoc, deleteDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Image from 'next/image';
 import { format, addMinutes } from 'date-fns';
-import { Calendar, MapPin, UserCheck, UserPlus, FilePenLine, Clock, Link as LinkIcon, PartyPopper, QrCode, Ban } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, UserCheck, UserPlus, FilePenLine, Clock, Link as LinkIcon, PartyPopper, QrCode, Ban, Building2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +32,7 @@ import {
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import ChatRoom from '@/components/ChatRoom';
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/components/ui/carousel';
 
 const toMalaysiaTime = (date: Date) => {
   return new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
@@ -65,6 +68,8 @@ export default function EventDetailPage() {
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [communityLink, setCommunityLink] = useState<string | undefined>(undefined);
   const [now, setNow] = useState(new Date());
+  
+  const viewCountIncremented = useRef(false);
 
   // Set up an interval to update the current time every second for real-time checks
   useEffect(() => {
@@ -98,30 +103,46 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (!eventId) return;
 
-    const fetchEvent = async () => {
-      setLoading(true);
-      try {
-        const docRef = doc(db, 'events', eventId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const eventData = { id: docSnap.id, ...docSnap.data() } as Event;
-          setEvent(eventData);
-          setEventExists(true);
-        } else {
-          setEventExists(false);
-        }
-      } catch (error) {
-        console.error("Error fetching event:", error);
-        setEventExists(false);
-      } finally {
-        setLoading(false);
-      }
-    };
+    const docRef = doc(db, 'events', eventId);
     
-    fetchEvent();
+    // Use onSnapshot to listen for real-time updates (like view counts)
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const eventData = { id: docSnap.id, ...docSnap.data() } as Event;
+        setEvent(eventData);
+        setEventExists(true);
+      } else {
+        setEventExists(false);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching event:", error);
+      setEventExists(false);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
 
   }, [eventId]);
+
+  useEffect(() => {
+    // Increment view count logic
+    if (eventId && user && !isAdmin && !viewCountIncremented.current) {
+      const docRef = doc(db, 'events', eventId);
+      updateDoc(docRef, { viewCount: increment(1) })
+        .catch((serverError) => {
+           const permissionError = new FirestorePermissionError({
+              path: docRef.path,
+              operation: 'update',
+              requestResourceData: { viewCount: 'increment' },
+          }, serverError);
+          errorEmitter.emit('permission-error', permissionError);
+        });
+      
+      // Set the ref to true to prevent further increments on this mount
+      viewCountIncremented.current = true;
+    }
+  }, [eventId, user, isAdmin]);
 
    useEffect(() => {
     if (user && eventId) {
@@ -267,11 +288,42 @@ export default function EventDetailPage() {
   return (
     <>
     <div className="container mx-auto px-4 py-8 max-w-4xl">
+       <Button variant="ghost" onClick={() => router.push('/')} className="mb-4 text-white hover:text-white/80">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Events
+      </Button>
       <Card className="overflow-hidden mt-4">
-        <div className="relative h-64 md:h-96 w-full">
-          <Image src={event.imageUrl} alt={event.title} fill style={{ objectFit: 'cover' }} priority />
+        <div className="relative">
+          <Carousel className="w-full">
+            <CarouselContent>
+              <CarouselItem>
+                <div className="relative h-64 md:h-96 w-full">
+                  <Image src={event.imageUrl} alt={event.title} fill style={{ objectFit: 'cover' }} priority />
+                </div>
+              </CarouselItem>
+              {event.videoUrl && (
+                <CarouselItem>
+                  <div className="relative h-64 md:h-96 w-full bg-black flex items-center justify-center">
+                    <video
+                      src={event.videoUrl}
+                      controls
+                      className="max-w-full max-h-full"
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+                </CarouselItem>
+              )}
+            </CarouselContent>
+             {(event.videoUrl) && (
+              <>
+                <CarouselPrevious className="left-4" />
+                <CarouselNext className="right-4" />
+              </>
+            )}
+          </Carousel>
           {isOrganizer && (
-            <Button asChild className="absolute top-4 right-4" variant="secondary">
+            <Button asChild className="absolute top-4 right-4 z-10" variant="secondary">
               <Link href={`/admin/edit/${event.id}`}>
                 <FilePenLine className="mr-2 h-4 w-4" />
                 Edit Event
@@ -302,6 +354,10 @@ export default function EventDetailPage() {
                   <MapPin className="h-4 w-4 mr-2" />
                   <span>{event.location}</span>
                 </div>
+                <div className="flex items-center">
+                  <Eye className="h-4 w-4 mr-2" />
+                  <span>{event.viewCount || 0} views</span>
+                </div>
             </div>
           </div>
         </CardHeader>
@@ -310,6 +366,28 @@ export default function EventDetailPage() {
             {event.description}
           </div>
           
+          {(event.conductingCampus || (event.eligibleCampuses && event.eligibleCampuses.length > 0)) && (
+            <div className='space-y-4 rounded-lg border bg-card text-card-foreground shadow-sm p-4'>
+                <h3 className="font-semibold flex items-center"><Building2 className='mr-2 h-5 w-5'/>Campus Information</h3>
+                {event.conductingCampus && (
+                    <div className="text-sm">
+                        <p className="font-medium">Conducted by:</p>
+                        <p className="text-muted-foreground">{event.conductingCampus}</p>
+                    </div>
+                )}
+                {event.eligibleCampuses && event.eligibleCampuses.length > 0 && (
+                     <div className="text-sm">
+                        <p className="font-medium">Open to:</p>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                            {event.eligibleCampuses.map(campus => (
+                                <Badge key={campus} variant='outline'>{campus}</Badge>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+          )}
+
           {!isAdmin && user && (
             isRegistered ? (
               <Card className="bg-green-500/10 border-green-500/50">
@@ -435,4 +513,13 @@ export default function EventDetailPage() {
 }
 
     
+
+
+
+    
+
+
+
+
+
 

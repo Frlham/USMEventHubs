@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import EventCard from '@/components/EventCard';
@@ -15,19 +15,27 @@ import { SplashScreen } from '@/components/SplashScreen';
 import { WelcomePage } from '@/components/WelcomePage';
 import { FeaturedEventsCarousel } from '@/components/FeaturedEventsCarousel';
 import { ScrollAnimation } from '@/components/ScrollAnimation';
-
 import { addMinutes } from 'date-fns';
+import { CampusFilter } from '@/components/CampusFilter';
 
 export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [now, setNow] = useState(new Date());
   const { priceFilter, setPriceFilter, typeFilter, setTypeFilter } = useEventFilters();
-  const { user, loading: authLoading } = useAuth();
+  const { user, userProfile, isAdmin, loading: authLoading } = useAuth();
+  const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
   const router = useRouter();
   const [showSplash, setShowSplash] = useState(true);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
 
+  useEffect(() => {
+    // Check session storage to see if welcome screen should be skipped
+    const welcomeDismissed = sessionStorage.getItem('welcomeDismissed');
+    if (welcomeDismissed === 'true') {
+      setShowWelcome(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -65,38 +73,56 @@ export default function Home() {
     return () => unsubscribe();
   }, [user, authLoading]);
 
-  // Hide splash screen after a delay, then show welcome page
+  // Hide splash screen after a delay
   useEffect(() => {
     if (!authLoading && user) {
       const timer = setTimeout(() => {
         setShowSplash(false);
-        setShowWelcome(true); // Show welcome page after splash
       }, 1700); // Same duration as splash screen animation
       return () => clearTimeout(timer);
     }
   }, [authLoading, user]);
 
-
-  const filteredEvents = useMemo(() => {
-    const visibleEvents = events.filter(event => {
+  // A base list of events that the current user is eligible to see and are not over.
+  const eligibleEvents = useMemo(() => {
+    // First, filter out past events
+    const activeEvents = events.filter(event => {
       if (event.date && event.startTime && event.endTime) {
         const eventDate = event.date.toDate();
-
-        const [startHours, startMinutes] = event.startTime.split(':').map(Number);
-        const startDateTime = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate(), startHours, startMinutes);
-
+        
         const [endHours, endMinutes] = event.endTime.split(':').map(Number);
         const endDateTime = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate(), endHours, endMinutes);
 
-        const registrationDeadline = addMinutes(startDateTime, 15);
-
-        // An event should be hidden if it's over OR registration has closed.
-        return now < endDateTime && now < registrationDeadline;
+        return now < endDateTime;
       }
-      return false; // Don't show events without complete time info
+      return false;
+    }).sort((a, b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+    
+    // Then, filter by eligibility
+    if (isAdmin) {
+      return activeEvents; // Admins can see all active events.
+    }
+    
+    // Students only see events they are eligible for.
+    return activeEvents.filter(event => {
+      // If eligibleCampuses is not set or is empty, assume it's open to all.
+      if (!event.eligibleCampuses || event.eligibleCampuses.length === 0) {
+        return true;
+      }
+      // Otherwise, check if the user's campus is in the list.
+      return event.eligibleCampuses.includes(userProfile?.campus || '');
     });
+  }, [events, now, isAdmin, userProfile]);
+  
 
-    return visibleEvents.filter(event => {
+  // Featured events are derived from the eligible list.
+  const featuredEvents = useMemo(() => {
+    return eligibleEvents.slice(0, 5);
+  }, [eligibleEvents]);
+
+  // The final grid of events is filtered from the pre-vetted eligible list.
+  const filteredEvents = useMemo(() => {
+    return eligibleEvents.filter(event => {
       const priceMatch =
         priceFilter === 'all' ||
         (priceFilter === 'free' && event.isFree) ||
@@ -105,14 +131,19 @@ export default function Home() {
       const typeMatch =
         typeFilter === 'all' ||
         typeFilter === event.eventType;
-
-      return priceMatch && typeMatch;
+      
+      // If a campus is selected, filter by the event's conducting campus.
+      // If no campus is selected, show all eligible events.
+      const campusMatch = !selectedCampus || event.conductingCampus === selectedCampus;
+      
+      return priceMatch && typeMatch && campusMatch;
     });
-  }, [events, priceFilter, typeFilter, now]);
+  }, [eligibleEvents, priceFilter, typeFilter, selectedCampus]);
 
 
   const handleGetStarted = () => {
     setShowWelcome(false);
+    sessionStorage.setItem('welcomeDismissed', 'true');
   };
 
 
@@ -146,80 +177,102 @@ export default function Home() {
     return <WelcomePage onGetStarted={handleGetStarted} />;
   }
 
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Featured Events Carousel */}
-      <ScrollAnimation delay={200}>
-        <FeaturedEventsCarousel events={filteredEvents} />
-      </ScrollAnimation>
+    <>
+      <div className="container mx-auto px-4 pt-24 pb-8">
+        {/* Featured Events Carousel */}
+        {featuredEvents.length > 0 && (
+          <ScrollAnimation delay={200}>
+            <h1 className="text-4xl font-bold font-headline text-center text-white mb-2 [text-shadow:0_2px_4px_rgba(0,0,0,0.7)]">
+              Featured Events
+            </h1>
+            <p className="text-lg text-center text-white/80 mb-8 max-w-2xl mx-auto [text-shadow:0_1px_2px_rgba(0,0,0,0.5)]">
+              Here are some of the most popular and up-and-coming events. Don&apos;t miss out!
+            </p>
+            <FeaturedEventsCarousel events={featuredEvents} />
+          </ScrollAnimation>
+        )}
+
+        {/* Campus Filter */}
+        <ScrollAnimation delay={300}>
+          <div className="mb-12">
+             <h2 className="text-3xl font-bold font-headline text-center text-white mb-2 [text-shadow:0_2px_4px_rgba(0,0,0,0.7)]">
+              Filter by Campus
+            </h2>
+            <p className="text-lg text-center text-white/80 mb-8 max-w-2xl mx-auto [text-shadow:0_1px_2px_rgba(0,0,0,0.5)]">
+              Select a campus to see events happening there.
+            </p>
+            <CampusFilter selectedCampus={selectedCampus} onSelectCampus={setSelectedCampus} />
+          </div>
+        </ScrollAnimation>
 
 
-      <ScrollAnimation delay={400}>
-        <div className="flex justify-center mb-8">
-          <div className="flex flex-col sm:flex-row items-center gap-4 p-4 border rounded-lg bg-card/80 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
-                value={priceFilter}
-                onValueChange={(value) => setPriceFilter(value as any || 'all')}
-                aria-label="Filter by price"
-              >
-                <ToggleGroupItem value="all" aria-label="All prices">All</ToggleGroupItem>
-                <ToggleGroupItem value="free" aria-label="Free events">Free</ToggleGroupItem>
-                <ToggleGroupItem value="paid" aria-label="Paid events"><DollarSign className="h-4 w-4 mr-1" />Paid</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-            <div className="flex items-center gap-2">
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
-                value={typeFilter}
-                onValueChange={(value) => setTypeFilter(value as any || 'all')}
-                aria-label="Filter by type"
-              >
-                <ToggleGroupItem value="all" aria-label="All event types">All</ToggleGroupItem>
-                <ToggleGroupItem value="online" aria-label="Online events"><Laptop className="h-4 w-4 mr-1" />Online</ToggleGroupItem>
-                <ToggleGroupItem value="physical" aria-label="Physical events"><Users className="h-4 w-4 mr-1" />Physical</ToggleGroupItem>
-              </ToggleGroup>
+        <ScrollAnimation delay={400}>
+          <div className="flex justify-center mb-8">
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-4 border rounded-lg bg-card/80 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  variant="outline"
+                  value={priceFilter}
+                  onValueChange={(value) => setPriceFilter(value as any || 'all')}
+                  aria-label="Filter by price"
+                >
+                  <ToggleGroupItem value="all" aria-label="All prices">All</ToggleGroupItem>
+                  <ToggleGroupItem value="free" aria-label="Free events">Free</ToggleGroupItem>
+                  <ToggleGroupItem value="paid" aria-label="Paid events"><DollarSign className="h-4 w-4 mr-1" />Paid</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              <div className="flex items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  variant="outline"
+                  value={typeFilter}
+                  onValueChange={(value) => setTypeFilter(value as any || 'all')}
+                  aria-label="Filter by type"
+                >
+                  <ToggleGroupItem value="all" aria-label="All event types">All</ToggleGroupItem>
+                  <ToggleGroupItem value="online" aria-label="Online events"><Laptop className="h-4 w-4 mr-1" />Online</ToggleGroupItem>
+                  <ToggleGroupItem value="physical" aria-label="Physical events"><Users className="h-4 w-4 mr-1" />Physical</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </div>
           </div>
-        </div>
-      </ScrollAnimation>
+        </ScrollAnimation>
 
-      {loadingEvents ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="space-y-4">
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-6 w-3/4" />
-              <Skeleton className="h-4 w-1/2" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ))}
-        </div>
-      ) : filteredEvents.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredEvents.map((event, index) => (
-            <ScrollAnimation key={event.id} delay={index * 100}>
-              <EventCard event={event} />
-            </ScrollAnimation>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-20 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 animate-fade-in-up">
-          <div className="bg-white/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-float">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+        {loadingEvents ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="space-y-4">
+                <Skeleton className="h-56 w-full" />
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ))}
           </div>
-          <p className="text-xl text-white/80 font-medium">No events found matching your criteria.</p>
-          <p className="text-white/50 mt-2">Try adjusting your filters or search terms.</p>
-        </div>
-      )}
-    </div>
+        ) : filteredEvents.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredEvents.map((event, index) => (
+              <ScrollAnimation key={event.id} delay={index * 100}>
+                <EventCard event={event} />
+              </ScrollAnimation>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-20 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 animate-fade-in-up">
+            <div className="bg-white/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-float">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <p className="text-xl text-white/80 font-medium">No events found matching your criteria.</p>
+            <p className="text-white/50 mt-2">Try adjusting your filters or search terms.</p>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
